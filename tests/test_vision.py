@@ -30,7 +30,10 @@ def test_step_reproduces_simulate(model):
     from flyloop.stimuli import drifting_grating
 
     stim = drifting_grating(0, duration_s=0.2, t_pre=0.05, dt=1 / 100)
-    ref = model.simulate(stim).central
+    # flyvis's own Network.simulate is the reference
+    ref = model.simulate(stim, return_activity=True).central
+    np.testing.assert_allclose(model.simulate(stim, chunk_frames=7).central, ref,
+                               atol=1e-6)
     state, out = model.init_state(1), []
     for k in range(0, stim.n_frames, 3):
         c, _, state = model.step(stim.frames[None, k : k + 3], state)

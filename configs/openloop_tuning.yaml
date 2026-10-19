@@ -1,0 +1,45 @@
+# Open-loop T4/T5 direction tuning to moving ON and OFF edges.
+# Run: python scripts/run_openloop_tuning.py [key=value ...]
+
+sweep: openloop_tuning
+index: 0
+seed: 0
+out_root: ${oc.env:FLYLOOP_RUNS,runs}
+save_raw: false        # also save central/mean traces of every stimulus (npz)
+
+model:
+  name: flow/0000/000  # best-ranked pretrained network
+  dt: 0.005            # s; flyvis moving-edge analysis uses 1/200
+  initial_state: steady
+  t_init: 1.0
+  cell_types: [T4a, T4b, T4c, T4d, T5a, T5b, T5c, T5d]
+
+stimulus:
+  directions_deg: [0, 45, 90, 135, 180, 225, 270, 315]
+  polarities: ["on", "off"]  # quoted: YAML reads bare on/off as booleans
+  speed_deg_s: 110.2   # 19 ommatidia/s, the flyvis tutorial speed
+  contrast: 1.0        # edge luminance 1 (ON) or 0 (OFF) on a 0.5 background
+  mean_lum: 0.5
+  start_deg: -100.0    # sweep covers the whole lattice
+  end_deg: 100.0
+  t_pre: 1.0
+  t_post: 0.5
+  n_sub: 5             # sub-samples per ommatidium side
+
+analysis:
+  # The central-column peak is taken while the edge is within +-window_deg of the
+  # centre, as in flyvis (from -22.5 to +24.75 deg). Population means use the whole sweep.
+  window_deg: 22.5
+  baseline: null       # null = raw rectified voltage (flyvis); "pre" = subtract pre-motion value
+  norm_across_polarity: true  # DSI denominator = max over ON/OFF (flyvis convention)
+  compare_flyvis: false  # also run flyvis's own MovingEdge through NetworkView (slow, first time)
+
+# Optional sweep: a list of override dicts selected by `index`.
+sweep_list: []
+
+hydra:
+  run:
+    dir: ${out_root}/${sweep}/${index}_${seed}
+  output_subdir: .hydra
+  job:
+    chdir: false

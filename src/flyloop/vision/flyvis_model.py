@@ -135,7 +135,9 @@ class FlyvisModel:
         return None
 
     @torch.no_grad()
-    def simulate(self, stimulus, return_activity: bool = False) -> Responses:
+    def simulate(
+        self, stimulus, return_activity: bool = False, chunk_frames: int = 100
+    ) -> Responses:
         """Run a stimulus through the network.
 
         Args:
@@ -143,23 +145,28 @@ class FlyvisModel:
                 (n_frames, 1, 721) or (batch, n_frames, 1, 721) sampled at dt.
             return_activity: Also return the full (batch, n_frames, n_nodes)
                 activity (large; for debugging or saving raw data on request).
+            chunk_frames: Without return_activity, integrate in chunks of this
+                many frames and keep only the readout, so memory stays bounded.
         """
         movie, t_pre = self._as_movie(stimulus)
         state = self.init_state(movie.shape[0], movie[:, 0])
-        activity = self.network.simulate(movie, self.dt, initial_state=state)
-        return self._readout(activity, t_pre, return_activity)
+        time = np.arange(movie.shape[1]) * self.dt - t_pre
+        if return_activity:
+            activity = self.network.simulate(movie, self.dt, initial_state=state)
+            central = activity[..., self.central_index]
+            mean = self._layer_means(activity)
+            return Responses(time, self.cell_types, central.cpu().numpy(),
+                             mean.cpu().numpy(), activity.cpu().numpy())
+        centrals, means = [], []
+        for k in range(0, movie.shape[1], chunk_frames):
+            c, m, state = self.step(movie[:, k : k + chunk_frames], state)
+            centrals.append(c.cpu())
+            means.append(m.cpu())
+        return Responses(time, self.cell_types, torch.cat(centrals, 1).numpy(),
+                         torch.cat(means, 1).numpy())
 
-    def _readout(self, activity: torch.Tensor, t_pre: float, return_activity: bool):
-        central = activity[..., self.central_index]
-        mean = torch.stack([activity[..., idx].mean(-1) for idx in self.layer_index], -1)
-        n_frames = activity.shape[1]
-        return Responses(
-            time=np.arange(n_frames) * self.dt - t_pre,
-            cell_types=self.cell_types,
-            central=central.cpu().numpy(),
-            mean=mean.cpu().numpy(),
-            activity=activity.cpu().numpy() if return_activity else None,
-        )
+    def _layer_means(self, activity: torch.Tensor) -> torch.Tensor:
+        return torch.stack([activity[..., idx].mean(-1) for idx in self.layer_index], -1)
 
     # --- stepping (closed loop) ----------------------------------------------------
 
@@ -183,6 +190,4 @@ class FlyvisModel:
         stim.add_input(frames)
         states = self.network(stim(), self.dt, state=state, as_states=True)
         activity = torch.stack([s.nodes.activity for s in states], dim=1)
-        central = activity[..., self.central_index]
-        mean = torch.stack([activity[..., idx].mean(-1) for idx in self.layer_index], -1)
-        return central, mean, states[-1]
+        return activity[..., self.central_index], self._layer_means(activity), states[-1]

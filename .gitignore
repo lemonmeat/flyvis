@@ -1,0 +1,28 @@
+# Run outputs (keep the folder)
+runs/*
+!runs/.gitkeep
+outputs/
+multirun/
+
+# flyvis pretrained models and caches
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Environments and secrets
+.env
+.venv/
+wandb/
+
+# Notebooks and OS
+.ipynb_checkpoints/
+.DS_Store
+.vscode/
+.idea/

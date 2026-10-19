@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flyloop"
+version = "0.1.0"
+description = "Closed-loop virtual fly steered by a connectome-constrained visual system (flyvis)."
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+authors = [{ name = "Andre Graves", email = "ag0226@princeton.edu" }]
+dependencies = [
+  "flyvis==1.2.0",
+  "torch",
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "pandas",
+  "hydra-core>=1.3",
+  "omegaconf",
+  "wandb",
+  "neuprint-python",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["flyvis: tests that load the pretrained flyvis model (slow, need the download)"]
+
+[tool.ruff]
+line-length = 90
+target-version = "py310"

@@ -1,0 +1,25 @@
+name: flyloop
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - scipy
+  - matplotlib
+  - pandas
+  - pytest
+  - ffmpeg
+  - pip:
+      # torch from PyPI: CPU/MPS build on macOS, CUDA build on Linux (Adroit).
+      - torch
+      - torchvision
+      - flyvis==1.2.0
+      - hydra-core>=1.3
+      - wandb
+      - neuprint-python
+      - ruff
+      # this repo, editable
+      - -e .
+# After creating the env, download the pretrained flyvis ensemble (see `make env`):
+#   FLYVIS_ROOT_DIR=$PWD/data/flyvis flyvis download-pretrained

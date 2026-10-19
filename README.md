@@ -39,8 +39,10 @@ activate first (`conda activate flyloop`). Pretrained models land in
 `data/flyvis` (gitignored); `flyloop` sets `FLYVIS_ROOT_DIR` there unless you
 export your own.
 
-flyvis picks its device at import (`cuda` if available, else `cpu`); it never
-selects Apple MPS by itself. See `scripts/benchmark_speed.py` for MPS timings.
+flyvis picks its device at import (`cuda` if available, else `cpu`). Apple MPS
+does not work with flyvis 1.2.0: network initialization creates float64 tensors,
+which MPS does not support, and moving a CPU-built network leaves flyvis's internal
+index tensors on the CPU. On the Mac flyvis runs on CPU.
 
 ## Running experiments
 
@@ -84,12 +86,13 @@ module avail anaconda3                 # pick a version, update slurm/array_temp
 module load anaconda3/<version>
 conda env create -f environment.yml    # PyPI torch on Linux ships with CUDA
 conda activate flyloop
-flyvis download-pretrained             # login node: compute nodes may lack internet
+FLYVIS_ROOT_DIR=$PWD/data/flyvis flyvis download-pretrained   # login node: compute nodes may lack internet
 mkdir -p /scratch/network/$USER/flyvis-closedloop/{runs,logs}
 ```
 
-`flyloop` points `FLYVIS_ROOT_DIR` at `~/cos597z/data/flyvis`, so run the download
-from the repo root (or export `FLYVIS_ROOT_DIR` to the same path).
+`flyloop` points `FLYVIS_ROOT_DIR` at `~/cos597z/data/flyvis` unless it is set.
+The `flyvis` CLI does not import `flyloop`, so the download needs that variable
+set explicitly as above.
 
 ### Submitting and collecting
 

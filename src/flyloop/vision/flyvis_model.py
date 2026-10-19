@@ -75,14 +75,14 @@ class FlyvisModel:
         t_init: float = 1.0,
         checkpoint: str | int = "best",
     ):
-        import flyvis
         from flyvis import NetworkView
 
         self.model = model
         self.dt = dt
         self.initial_state = initial_state
         self.t_init = t_init
-        self.view = NetworkView(flyvis.results_dir / model)
+        results_dir = flyloop.FLYVIS_ROOT_DIR / "results"
+        self.view = NetworkView(results_dir / model, root_dir=results_dir)
         self.network = self.view.init_network(checkpoint=checkpoint)
         self.network.eval()
         self.device = next(self.network.parameters()).device

@@ -1,0 +1,188 @@
+"""Thin wrapper around a pretrained flyvis network for T4/T5 readout."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Literal, Sequence
+
+import numpy as np
+import torch
+
+import flyloop  # noqa: F401  (sets FLYVIS_ROOT_DIR before flyvis is imported)
+
+T4T5 = ("T4a", "T4b", "T4c", "T4d", "T5a", "T5b", "T5c", "T5d")
+
+
+def set_flyvis_device(device: str | torch.device) -> torch.device:
+    """Point flyvis (and torch's default device) at `device`.
+
+    flyvis picks cuda or cpu at import and allocates its stimulus buffers on
+    torch's default device, so this is process-global. Call it before
+    constructing a FlyvisModel.
+    """
+    import flyvis
+
+    device = torch.device(device)
+    torch.set_default_device(device)
+    flyvis.device = device
+    return device
+
+
+@dataclass
+class Responses:
+    """Readout of selected cell types.
+
+    Attributes:
+        time: (n_frames,) seconds relative to stimulus motion onset.
+        cell_types: Names along the cell-type axis.
+        central: (batch, n_frames, n_types) response of each type's central column.
+        mean: (batch, n_frames, n_types) mean over all columns of each type.
+        activity: Optional (batch, n_frames, n_nodes) full network activity.
+    """
+
+    time: np.ndarray
+    cell_types: list[str]
+    central: np.ndarray
+    mean: np.ndarray
+    activity: np.ndarray | None = field(default=None, repr=False)
+
+    def __getitem__(self, cell_type: str) -> dict[str, np.ndarray]:
+        i = self.cell_types.index(cell_type)
+        return {"central": self.central[..., i], "mean": self.mean[..., i]}
+
+
+class FlyvisModel:
+    """Load a pretrained flyvis network and read out a list of cell types.
+
+    Args:
+        model: Path of the pretrained network relative to flyvis.results_dir.
+            "flow/0000/000" is the best-ranked model of the 50-model ensemble.
+        cell_types: Cell types to read out (default T4a-d, T5a-d).
+        dt: Integration time step in seconds; stimuli must be sampled at dt.
+        initial_state: "steady" (grey at value 0.5 for t_init seconds, as flyvis's
+            moving-edge analysis does), "fade_in" (ramp the contrast of the first
+            frame over t_init), or "none" (flyvis's default initial state).
+        t_init: Duration used to compute the initial state.
+        checkpoint: flyvis checkpoint selector ("best" or an index).
+    """
+
+    def __init__(
+        self,
+        model: str = "flow/0000/000",
+        cell_types: Sequence[str] = T4T5,
+        dt: float = 1 / 200,
+        initial_state: Literal["steady", "fade_in", "none"] = "steady",
+        t_init: float = 1.0,
+        checkpoint: str | int = "best",
+    ):
+        import flyvis
+        from flyvis import NetworkView
+
+        self.model = model
+        self.dt = dt
+        self.initial_state = initial_state
+        self.t_init = t_init
+        self.view = NetworkView(flyvis.results_dir / model)
+        self.network = self.view.init_network(checkpoint=checkpoint)
+        self.network.eval()
+        self.device = next(self.network.parameters()).device
+        self.set_cell_types(cell_types)
+
+    # --- readout indices ---------------------------------------------------------
+
+    def set_cell_types(self, cell_types: Sequence[str]) -> None:
+        connectome = self.network.connectome
+        unique = list(connectome.unique_cell_types[:].astype(str))
+        missing = [t for t in cell_types if t not in unique]
+        if missing:
+            raise ValueError(f"cell types not in the flyvis connectome: {missing}")
+        central_all = connectome.central_cells_index[:]
+        self.cell_types = list(cell_types)
+        self.central_index = np.array([central_all[unique.index(t)] for t in cell_types])
+        self.layer_index = [connectome.nodes.layer_index[t][:] for t in cell_types]
+
+    @property
+    def n_nodes(self) -> int:
+        return int(self.network.n_nodes)
+
+    # --- simulation --------------------------------------------------------------
+
+    def _as_movie(self, stimulus) -> tuple[torch.Tensor, float]:
+        frames = getattr(stimulus, "frames", stimulus)
+        t_pre = float(getattr(stimulus, "t_pre", 0.0))
+        stim_dt = getattr(stimulus, "dt", None)
+        if stim_dt is not None and not np.isclose(stim_dt, self.dt):
+            raise ValueError(f"stimulus dt={stim_dt} differs from model dt={self.dt}")
+        frames = torch.as_tensor(frames, dtype=torch.float32, device=self.device)
+        if frames.ndim == 3:
+            frames = frames[None]
+        if frames.ndim != 4:
+            raise ValueError("frames must be (n_frames, 1, hexals) or (batch, n_frames, 1, hexals)")
+        return frames, t_pre
+
+    @torch.no_grad()
+    def init_state(self, batch_size: int = 1, first_frame: torch.Tensor | None = None):
+        """Initial network state according to `initial_state`.
+
+        first_frame: (batch, 1, hexals), needed for "fade_in".
+        """
+        if self.initial_state == "steady":
+            return self.network.steady_state(self.t_init, self.dt, batch_size, value=0.5)
+        if self.initial_state == "fade_in":
+            if first_frame is None:
+                raise ValueError("fade_in needs the first frame")
+            return self.network.fade_in_state(self.t_init, self.dt, first_frame)
+        return None
+
+    @torch.no_grad()
+    def simulate(self, stimulus, return_activity: bool = False) -> Responses:
+        """Run a stimulus through the network.
+
+        Args:
+            stimulus: A `flyloop.stimuli.StimulusSequence` or a tensor of frames
+                (n_frames, 1, 721) or (batch, n_frames, 1, 721) sampled at dt.
+            return_activity: Also return the full (batch, n_frames, n_nodes)
+                activity (large; for debugging or saving raw data on request).
+        """
+        movie, t_pre = self._as_movie(stimulus)
+        state = self.init_state(movie.shape[0], movie[:, 0])
+        activity = self.network.simulate(movie, self.dt, initial_state=state)
+        return self._readout(activity, t_pre, return_activity)
+
+    def _readout(self, activity: torch.Tensor, t_pre: float, return_activity: bool):
+        central = activity[..., self.central_index]
+        mean = torch.stack([activity[..., idx].mean(-1) for idx in self.layer_index], -1)
+        n_frames = activity.shape[1]
+        return Responses(
+            time=np.arange(n_frames) * self.dt - t_pre,
+            cell_types=self.cell_types,
+            central=central.cpu().numpy(),
+            mean=mean.cpu().numpy(),
+            activity=activity.cpu().numpy() if return_activity else None,
+        )
+
+    # --- stepping (closed loop) ----------------------------------------------------
+
+    @torch.no_grad()
+    def step(self, frames: torch.Tensor, state):
+        """Advance the network by the given frames, keeping state between calls.
+
+        Args:
+            frames: (batch, n_frames, 1, hexals) photoreceptor input for the next
+                n_frames * dt seconds.
+            state: State from `init_state` or a previous `step`.
+
+        Returns:
+            (central, mean, state): central and population-mean responses of the
+            readout cell types as tensors (batch, n_frames, n_types) on the model
+            device, and the new state.
+        """
+        frames = torch.as_tensor(frames, dtype=torch.float32, device=self.device)
+        stim = self.network.stimulus
+        stim.zero(frames.shape[0], frames.shape[1])
+        stim.add_input(frames)
+        states = self.network(stim(), self.dt, state=state, as_states=True)
+        activity = torch.stack([s.nodes.activity for s in states], dim=1)
+        central = activity[..., self.central_index]
+        mean = torch.stack([activity[..., idx].mean(-1) for idx in self.layer_index], -1)
+        return central, mean, states[-1]

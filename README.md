@@ -41,3 +41,66 @@ export your own.
 
 flyvis picks its device at import (`cuda` if available, else `cpu`); it never
 selects Apple MPS by itself. See `scripts/benchmark_speed.py` for MPS timings.
+
+## Running experiments
+
+```bash
+make tuning                     # open-loop T4/T5 tuning -> runs/openloop_tuning/0_0/
+make tuning ARGS="model.name=flow/0000/001 index=1"
+make bench                      # speed benchmark -> runs/benchmark_speed/
+```
+
+Every run writes `runs/<sweep>/<index>_<seed>/` with the resolved `config.yaml`,
+`meta.json` (git commit, dirty flag, host, timings), CSV metrics and PNG plots.
+Set `FLYLOOP_RUNS` to write elsewhere. A sweep is a `sweep_list` of override dicts
+in the experiment config; `index` (or `--index N`) picks one entry.
+
+## Adroit
+
+Code moves by git only: Mac -> GitHub -> Adroit. Never edit code on the cluster.
+
+### SSH multiplexing
+
+Add this to `~/.ssh/config` on the Mac, so the Duo prompt comes once per session
+(GlobalProtect VPN when off campus):
+
+```
+Host adroit
+    HostName adroit.princeton.edu
+    User ag0226
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%r@%h:%p
+    ControlPersist 10h
+```
+
+Open the master connection once with `ssh adroit` (approve Duo); `make submit`
+and `make pull` then reuse it for 10 hours. `ssh -O exit adroit` closes it.
+
+### One-time setup on the Adroit login node
+
+```bash
+git clone <github-url> ~/cos597z && cd ~/cos597z
+module avail anaconda3                 # pick a version, update slurm/array_template.slurm
+module load anaconda3/<version>
+conda env create -f environment.yml    # PyPI torch on Linux ships with CUDA
+conda activate flyloop
+flyvis download-pretrained             # login node: compute nodes may lack internet
+mkdir -p /scratch/network/$USER/flyvis-closedloop/{runs,logs}
+```
+
+`flyloop` points `FLYVIS_ROOT_DIR` at `~/cos597z/data/flyvis`, so run the download
+from the repo root (or export `FLYVIS_ROOT_DIR` to the same path).
+
+### Submitting and collecting
+
+```bash
+make submit SWEEP=openloop_tuning              # git push, ssh adroit: git pull + sbatch
+make submit SWEEP=openloop_tuning ARRAY=0-3 ARGS="model.dt=0.01"
+make pull                                      # rsync *.csv, *.json, *.png into runs/
+```
+
+`make submit SWEEP=<name>` runs `scripts/run_<name>.py` with `configs/<name>.yaml`
+through `slurm/array_template.slurm`, one array index per `sweep_list` entry.
+It refuses to submit with uncommitted changes. Jobs write to
+`/scratch/network/ag0226/flyvis-closedloop/runs`, log to `.../logs`, use
+`MUJOCO_GL=egl` and W&B offline mode (`wandb sync` from the login node).

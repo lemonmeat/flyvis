@@ -29,6 +29,15 @@ runs/          outputs (gitignored)
 ## Setup
 
 ```bash
-make env     # create the conda env and download the pretrained flyvis ensemble
+make env     # create the env and download the pretrained flyvis ensemble
 make test
 ```
+
+On the Mac, `make env` builds a uv venv in `.venv` (Python 3.10). Where uv is
+missing (Adroit), it builds the conda env from `environment.yml`, which you must
+activate first (`conda activate flyloop`). Pretrained models land in
+`data/flyvis` (gitignored); `flyloop` sets `FLYVIS_ROOT_DIR` there unless you
+export your own.
+
+flyvis picks its device at import (`cuda` if available, else `cpu`); it never
+selects Apple MPS by itself. See `scripts/benchmark_speed.py` for MPS timings.

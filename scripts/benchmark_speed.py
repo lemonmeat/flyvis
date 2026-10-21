@@ -50,8 +50,10 @@ def worker(device: str, dts: list[float], sim_seconds: float, control_dt: float)
         for config in CONFIGS:
             eyes = models[:2] if config == "two_eyes" else models[:1]
             batch = 2 if config == "two_eyes_batched" else 1
+            # draw on the CPU explicitly: flyvis makes cuda torch's default device
             gen = torch.Generator(device="cpu").manual_seed(0)
-            frames = torch.rand(batch, k, 1, 721, generator=gen).to(models[0].device)
+            frames = torch.rand(batch, k, 1, 721, generator=gen, device="cpu")
+            frames = frames.to(models[0].device)
             states = [m.init_state(batch) for m in eyes]
             for _ in range(max(1, n_steps // 10)):  # warm-up
                 for i, m in enumerate(eyes):

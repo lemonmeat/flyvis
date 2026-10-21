@@ -101,9 +101,9 @@ job (or the whole array) ends or fails.
 
 ```bash
 make submit SWEEP=openloop_tuning              # git push, ssh adroit: git pull + sbatch
-make submit SWEEP=openloop_tuning ARRAY=0-3 ARGS="model.dt=0.01"
-make submit SWEEP=benchmark_speed ARGS="--devices cpu cuda" \
-     SBATCH_ARGS="--gres=gpu:nvidia_a100:1 --cpus-per-task=12 --time=00:20:00"
+make submit SWEEP=openloop_tuning RES=cpu ARRAY=0-3 ARGS="model.dt=0.01"
+make submit SWEEP=benchmark_speed RES=a100 TIME=00:20:00 ARGS="--devices cpu cuda" \
+     SBATCH_ARGS="--cpus-per-task=12"
 make status                                    # queue + last day's jobs
 make logs                                      # tail the newest log (or LOG=<file>)
 make pull                                      # rsync *.csv, *.json, *.png into runs/
@@ -111,9 +111,20 @@ make pull                                      # rsync *.csv, *.json, *.png into
 
 `make submit SWEEP=<name>` runs `scripts/run_<name>.py` (or `scripts/<name>.py`)
 through `slurm/array_template.slurm`. With `configs/<name>.yaml` there is one array
-index per `sweep_list` entry; otherwise a single job. `SBATCH_ARGS` adds sbatch
-options, e.g. a specific GPU type (`gpu:nvidia_a100:1` is a full A100; plain
-`gpu:1` may land on a 3g.20gb MIG slice). It refuses to submit with uncommitted
-changes. Jobs write to
+index per `sweep_list` entry; otherwise a single job. It refuses to submit with
+uncommitted changes.
+
+Resources: `RES` picks a preset and `TIME` the wall-time limit (default 1 h).
+Smaller requests are scheduled sooner, and Adroit has only 14 GPUs (4 A100, 8 A100
+MIG slices, 2 A40) but several CPU-only nodes.
+
+| `RES` | request | use for |
+|---|---|---|
+| `cpu` | no GPU, 4 CPUs, 8G | anything that doesn't need a GPU; usually starts at once |
+| `gpu` (default) | any free GPU, 2 CPUs, 8G | flyvis on GPU; first free A100, A40 or MIG slice |
+| `mig` | A100 3g.20gb slice, 2 CPUs, 8G | small GPU jobs |
+| `a100` | full A100, 4 CPUs, 16G | benchmarking, large batches |
+
+`SBATCH_ARGS` is appended last and overrides the preset (e.g. `--cpus-per-task=12`). Jobs write to
 `/scratch/network/ag0226/flyvis-closedloop/runs`, log to `.../logs`, use
 `MUJOCO_GL=egl` and W&B offline mode (`wandb sync` from the login node).

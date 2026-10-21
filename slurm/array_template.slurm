@@ -2,7 +2,7 @@
 # GPU job array: one array index per config entry (sweep_list[index]).
 #
 # Usage (from the repo root on Adroit; `make submit SWEEP=<name>` does this for you):
-#   sbatch --array=0-9 --job-name=<sweep> slurm/array_template.slurm scripts/run_<sweep>.py [hydra overrides...]
+#   sbatch --array=0-9 --job-name=<sweep> --gres=gpu:1 slurm/array_template.slurm scripts/run_<sweep>.py [hydra overrides...]
 #
 # The log directory must exist before submitting:
 #   mkdir -p /scratch/network/$USER/flyvis-closedloop/logs
@@ -10,10 +10,11 @@
 #SBATCH --job-name=flyloop
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
-#SBATCH --gres=gpu:1
-#SBATCH --time=04:00:00          # GPU jobs are capped at 2 days (48:00:00)
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
+#SBATCH --time=01:00:00          # GPU jobs are capped at 2 days (48:00:00)
+# No GPU by default: request one on the command line (`make submit RES=gpu`
+# does this), e.g. sbatch --gres=gpu:1 ... Small requests start sooner.
 #SBATCH --array=0-0              # overridden by sbatch --array on the command line
 #SBATCH --output=/scratch/network/%u/flyvis-closedloop/logs/%x_%A_%a.out
 #SBATCH --mail-type=END,FAIL      # one email when the whole array finishes

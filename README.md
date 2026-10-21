@@ -97,7 +97,7 @@ set explicitly as above.
 ### Submitting and collecting
 
 Prefer batch jobs to `salloc`: submit, walk away, and Slurm emails you when the
-job (or the whole array) ends or fails.
+job (or the whole array) starts, ends or fails.
 
 ```bash
 make submit SWEEP=openloop_tuning              # git push, ssh adroit: git pull + sbatch

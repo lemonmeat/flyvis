@@ -17,7 +17,7 @@
 # does this), e.g. sbatch --gres=gpu:1 ... Small requests start sooner.
 #SBATCH --array=0-0              # overridden by sbatch --array on the command line
 #SBATCH --output=/scratch/network/%u/flyvis-closedloop/logs/%x_%A_%a.out
-#SBATCH --mail-type=END,FAIL      # one email when the whole array finishes
+#SBATCH --mail-type=BEGIN,END,FAIL   # for an array: one email when it starts, one when all tasks end
 #SBATCH --mail-user=ag0226@princeton.edu
 
 set -euo pipefail

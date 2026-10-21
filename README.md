@@ -49,7 +49,7 @@ index tensors on the CPU. On the Mac flyvis runs on CPU.
 ```bash
 make tuning                     # open-loop T4/T5 tuning -> runs/openloop_tuning/0_0/
 make tuning ARGS="model.name=flow/0000/001 index=1"
-make bench                      # speed benchmark -> runs/benchmark_speed/
+make bench                      # speed benchmark -> runs/benchmark_speed/0_0/
 ```
 
 Every run writes `runs/<sweep>/<index>_<seed>/` with the resolved `config.yaml`,
@@ -96,14 +96,24 @@ set explicitly as above.
 
 ### Submitting and collecting
 
+Prefer batch jobs to `salloc`: submit, walk away, and Slurm emails you when the
+job (or the whole array) ends or fails.
+
 ```bash
 make submit SWEEP=openloop_tuning              # git push, ssh adroit: git pull + sbatch
 make submit SWEEP=openloop_tuning ARRAY=0-3 ARGS="model.dt=0.01"
+make submit SWEEP=benchmark_speed ARGS="--devices cpu cuda" \
+     SBATCH_ARGS="--gres=gpu:nvidia_a100:1 --cpus-per-task=12 --time=00:20:00"
+make status                                    # queue + last day's jobs
+make logs                                      # tail the newest log (or LOG=<file>)
 make pull                                      # rsync *.csv, *.json, *.png into runs/
 ```
 
-`make submit SWEEP=<name>` runs `scripts/run_<name>.py` with `configs/<name>.yaml`
-through `slurm/array_template.slurm`, one array index per `sweep_list` entry.
-It refuses to submit with uncommitted changes. Jobs write to
+`make submit SWEEP=<name>` runs `scripts/run_<name>.py` (or `scripts/<name>.py`)
+through `slurm/array_template.slurm`. With `configs/<name>.yaml` there is one array
+index per `sweep_list` entry; otherwise a single job. `SBATCH_ARGS` adds sbatch
+options, e.g. a specific GPU type (`gpu:nvidia_a100:1` is a full A100; plain
+`gpu:1` may land on a 3g.20gb MIG slice). It refuses to submit with uncommitted
+changes. Jobs write to
 `/scratch/network/ag0226/flyvis-closedloop/runs`, log to `.../logs`, use
 `MUJOCO_GL=egl` and W&B offline mode (`wandb sync` from the login node).

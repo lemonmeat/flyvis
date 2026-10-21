@@ -16,7 +16,7 @@
 #SBATCH --time=04:00:00          # GPU jobs are capped at 2 days (48:00:00)
 #SBATCH --array=0-0              # overridden by sbatch --array on the command line
 #SBATCH --output=/scratch/network/%u/flyvis-closedloop/logs/%x_%A_%a.out
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=END,FAIL      # one email when the whole array finishes
 #SBATCH --mail-user=ag0226@princeton.edu
 
 set -euo pipefail

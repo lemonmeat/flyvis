@@ -19,7 +19,7 @@ else
 endif
 PY := $(BIN)python
 
-.PHONY: env test tuning bench submit pull
+.PHONY: env test tuning bench submit pull status logs
 
 env:
 ifneq ($(shell command -v uv 2>/dev/null),)
@@ -39,16 +39,27 @@ tuning:
 bench:
 	$(PY) scripts/benchmark_speed.py $(ARGS)
 
-# make submit SWEEP=openloop_tuning [ARRAY=0-9] [ARGS="key=value ..."]
-# Runs scripts/run_$(SWEEP).py with configs/$(SWEEP).yaml as a Slurm array, one
-# index per sweep_list entry (ARRAY defaults to all of them).
+# make submit SWEEP=<name> [ARRAY=0-9] [ARGS="key=value ..."] [SBATCH_ARGS="..."]
+# Submits scripts/run_<name>.py (or scripts/<name>.py) as a Slurm array through
+# slurm/array_template.slurm. With configs/<name>.yaml, ARRAY defaults to one index
+# per sweep_list entry; otherwise to a single job (0-0). SBATCH_ARGS passes extra
+# sbatch options, e.g. SBATCH_ARGS="--gres=gpu:nvidia_a100:1 --time=00:20:00".
+SCRIPT ?= $(firstword $(wildcard scripts/run_$(SWEEP).py scripts/$(SWEEP).py))
 submit:
 	@test -n "$(SWEEP)" || { echo "usage: make submit SWEEP=<name>"; exit 1; }
-	@test -f scripts/run_$(SWEEP).py || { echo "missing scripts/run_$(SWEEP).py"; exit 1; }
+	@test -n "$(SCRIPT)" || { echo "no scripts/run_$(SWEEP).py or scripts/$(SWEEP).py"; exit 1; }
 	@test -z "$$(git status --porcelain)" || { echo "commit your changes first (code moves by git only)"; exit 1; }
-	$(eval ARRAY ?= 0-$(shell $(PY) -c "from omegaconf import OmegaConf; c = OmegaConf.load('configs/$(SWEEP).yaml'); print(max(len(c.get('sweep_list') or []), 1) - 1)"))
+	$(eval ARRAY ?= $(if $(wildcard configs/$(SWEEP).yaml),0-$(shell $(PY) -c "from omegaconf import OmegaConf; c = OmegaConf.load('configs/$(SWEEP).yaml'); print(max(len(c.get('sweep_list') or []), 1) - 1)"),0-0))
 	git push
-	ssh $(REMOTE) 'cd $(REMOTE_CODE) && git pull --ff-only && mkdir -p $(REMOTE_ROOT)/logs && sbatch --array=$(ARRAY) --job-name=$(SWEEP) slurm/array_template.slurm scripts/run_$(SWEEP).py $(ARGS)'
+	ssh $(REMOTE) 'cd $(REMOTE_CODE) && git pull --ff-only && mkdir -p $(REMOTE_ROOT)/logs && sbatch --array=$(ARRAY) --job-name=$(SWEEP) $(SBATCH_ARGS) slurm/array_template.slurm $(SCRIPT) $(ARGS)'
+
+# Queue and the last day's jobs, without logging in.
+status:
+	ssh $(REMOTE) 'squeue -u $(REMOTE_USER) -o "%.12i %.18j %.9T %.10M %.10l %R"; echo; sacct -u $(REMOTE_USER) -S now-1days -X --format=JobID%16,JobName%18,State%11,Elapsed,ExitCode | tail -n 15'
+
+# Tail the newest log (or LOG=<file name> in the logs folder).
+logs:
+	ssh $(REMOTE) 'cd $(REMOTE_ROOT)/logs && f="$(LOG)" && f=$${f:-$$(ls -t | head -1)} && echo "== $$f" && tail -n 40 "$$f"'
 
 # Bring back small results only (csv, json, png); raw activity stays on scratch.
 pull:

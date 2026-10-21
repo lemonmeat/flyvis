@@ -127,8 +127,10 @@ def main():
     ap.add_argument("--sim-seconds", type=float, default=2.0)
     ap.add_argument("--control-dt", type=float, default=0.01,
                     help="closed-loop control period: frames are fed in chunks of this length")
-    ap.add_argument("--out", default="runs/benchmark_speed",
-                    help="directory for benchmark.json and benchmark.txt")
+    ap.add_argument("--index", type=int, default=0,
+                    help="run index (Slurm array task id); names the output folder")
+    ap.add_argument("--out", default=None,
+                    help="output directory (default: $FLYLOOP_RUNS/benchmark_speed/<index>_0)")
     ap.add_argument("--worker", default=None, help=argparse.SUPPRESS)
     args = ap.parse_args()
 
@@ -141,6 +143,9 @@ def main():
 
     from flyloop.runio import git_commit
 
+    if args.out is None:
+        args.out = os.path.join(os.environ.get("FLYLOOP_RUNS", "runs"), "benchmark_speed",
+                                f"{args.index}_0")
     devices = args.devices or available_devices()
     reports = [run_device(d, args) for d in devices]
     text = print_table(reports, args.dts, args.control_dt)

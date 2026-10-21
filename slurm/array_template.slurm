@@ -30,6 +30,10 @@ shift
 # Use the same version that created the env (checked with `module avail anaconda3`, Oct 2026).
 module purge
 module load anaconda3/2026.7
+
+# Batch jobs are non-interactive; some activation scripts expect PS1.
+export PS1="${PS1-}"
+
 conda activate flyloop
 
 # Outputs go to scratch, never to /home.

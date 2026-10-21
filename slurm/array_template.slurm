@@ -26,9 +26,9 @@ shift
 
 # Conda, the way Princeton Research Computing recommends: purge modules, load
 # their anaconda3 module, activate the env created on the login node.
-# CHECK the available version with `module avail anaconda3` and update the line below.
+# Use the same version that created the env (checked with `module avail anaconda3`, Oct 2026).
 module purge
-module load anaconda3/2024.10
+module load anaconda3/2026.7
 conda activate flyloop
 
 # Outputs go to scratch, never to /home.

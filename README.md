@@ -82,8 +82,8 @@ and `make pull` then reuse it for 10 hours. `ssh -O exit adroit` closes it.
 
 ```bash
 git clone <github-url> ~/cos597z && cd ~/cos597z
-module avail anaconda3                 # pick a version, update slurm/array_template.slurm
-module load anaconda3/<version>
+module avail anaconda3                 # we use 2026.7; keep slurm/array_template.slurm in sync
+module load anaconda3/2026.7
 conda env create -f environment.yml    # PyPI torch on Linux ships with CUDA
 conda activate flyloop
 FLYVIS_ROOT_DIR=$PWD/data/flyvis flyvis download-pretrained   # login node: compute nodes may lack internet

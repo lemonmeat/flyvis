@@ -1,0 +1,42 @@
+# Open-loop yaw tuning: rotate a drum at fixed angular velocities and record the
+# HS/VS left-right difference. Run: python scripts/run_drum_openloop.py [key=value ...]
+
+sweep: drum_openloop
+index: 0
+seed: 0
+out_root: ${oc.env:FLYLOOP_RUNS,runs}
+
+model:
+  name: flow/0000/000
+  dt: 0.01             # tuning at 10 ms matches 5 ms (model_selection 10_0)
+
+eyes:
+  axis_azimuth_deg: 80.0
+  n_sub: 3
+
+lptc:
+  sources: [connectome, simple]
+  tau_lptc: 0.01
+  tau_lpi: 0.01
+  g_exc: 1.0
+  g_inh: 1.0
+
+drum:
+  kind: grating        # grating or texture
+  period_deg: 30.0     # grating
+  alpha: 2.0           # texture: power-spectrum slope
+  contrast: 1.0
+  seed: 0
+
+omegas_deg_s: [-720, -360, -180, -90, -45, -20, -10, 0, 10, 20, 45, 90, 180, 360, 720]
+t_settle: 0.5          # s of static drum before rotation
+t_rotate: 1.5          # s of rotation; the last half is averaged
+
+sweep_list: []
+
+hydra:
+  run:
+    dir: ${out_root}/${sweep}/${index}_${seed}
+  output_subdir: .hydra
+  job:
+    chdir: false

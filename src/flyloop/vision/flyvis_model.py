@@ -207,6 +207,30 @@ class FlyvisModel:
             readout cell types as tensors (batch, n_frames, n_types) on the model
             device, and the new state.
         """
+        central, mean = [], []
+
+        def readout(act):
+            central.append(act[:, self._central_t])
+            mean.append(self._layer_means(act))
+
+        state = self._integrate(frames, state, readout)
+        return torch.stack(central, 1), torch.stack(mean, 1), state
+
+    @torch.no_grad()
+    def step_columns(self, frames: torch.Tensor, state):
+        """Like `step`, but return every column of each readout type.
+
+        Returns:
+            (columns, state): columns is (batch, n_frames, n_types, n_cells) on the
+            model device (all readout types must have the same number of cells).
+        """
+        if self._layer_t is None:
+            raise ValueError("step_columns needs readout types with equal cell counts")
+        cols = []
+        state = self._integrate(frames, state, lambda act: cols.append(act[:, self._layer_t]))
+        return torch.stack(cols, 1), state
+
+    def _integrate(self, frames, state, readout):
         frames = torch.as_tensor(frames, dtype=torch.float32, device=self.device)
         params = self._params()
         stim = self.network.stimulus
@@ -215,10 +239,7 @@ class FlyvisModel:
         x = stim()
         if state is None:
             state = self.network._initial_state(params, frames.shape[0])
-        central, mean = [], []
         for i in range(x.shape[1]):
             state = self.network._next_state(params, state, x[:, i], self.dt)
-            act = state.nodes.activity
-            central.append(act[:, self._central_t])
-            mean.append(self._layer_means(act))
-        return torch.stack(central, 1), torch.stack(mean, 1), state
+            readout(state.nodes.activity)
+        return state

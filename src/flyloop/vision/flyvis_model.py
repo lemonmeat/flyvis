@@ -100,6 +100,12 @@ class FlyvisModel:
         self.cell_types = list(cell_types)
         self.central_index = np.array([central_all[unique.index(t)] for t in cell_types])
         self.layer_index = [connectome.nodes.layer_index[t][:] for t in cell_types]
+        # torch copies for the per-frame readout in step(); one stacked (n_types,
+        # n_cells) gather when all types have the same number of cells (T4/T5: 721)
+        self._central_t = torch.as_tensor(self.central_index, device=self.device)
+        sizes = {len(idx) for idx in self.layer_index}
+        self._layer_t = (torch.as_tensor(np.stack(self.layer_index), device=self.device)
+                         if len(sizes) == 1 else None)
 
     @property
     def n_nodes(self) -> int:
@@ -166,9 +172,25 @@ class FlyvisModel:
                          torch.cat(means, 1).numpy())
 
     def _layer_means(self, activity: torch.Tensor) -> torch.Tensor:
+        if self._layer_t is not None:
+            return activity[..., self._layer_t].mean(-1)
         return torch.stack([activity[..., idx].mean(-1) for idx in self.layer_index], -1)
 
     # --- stepping (closed loop) ----------------------------------------------------
+
+    def invalidate_params(self) -> None:
+        """Drop the cached parameters; call after changing network parameters
+        (e.g. a perturbation that scales time constants)."""
+        self._param_cache = None
+
+    def _params(self):
+        # flyvis's Network.forward clamps and rebuilds this namespace (a gather over
+        # all 1.5M edges) on every call. Parameters are fixed in eval mode, so build
+        # it once. Uses flyvis-internal methods; pinned to flyvis 1.2.0.
+        if getattr(self, "_param_cache", None) is None:
+            self.network.clamp()
+            self._param_cache = self.network._param_api()
+        return self._param_cache
 
     @torch.no_grad()
     def step(self, frames: torch.Tensor, state):
@@ -177,7 +199,8 @@ class FlyvisModel:
         Args:
             frames: (batch, n_frames, 1, hexals) photoreceptor input for the next
                 n_frames * dt seconds.
-            state: State from `init_state` or a previous `step`.
+            state: State from `init_state` or a previous `step` (None starts from
+                flyvis's default initial state).
 
         Returns:
             (central, mean, state): central and population-mean responses of the
@@ -185,9 +208,17 @@ class FlyvisModel:
             device, and the new state.
         """
         frames = torch.as_tensor(frames, dtype=torch.float32, device=self.device)
+        params = self._params()
         stim = self.network.stimulus
         stim.zero(frames.shape[0], frames.shape[1])
         stim.add_input(frames)
-        states = self.network(stim(), self.dt, state=state, as_states=True)
-        activity = torch.stack([s.nodes.activity for s in states], dim=1)
-        return activity[..., self.central_index], self._layer_means(activity), states[-1]
+        x = stim()
+        if state is None:
+            state = self.network._initial_state(params, frames.shape[0])
+        central, mean = [], []
+        for i in range(x.shape[1]):
+            state = self.network._next_state(params, state, x[:, i], self.dt)
+            act = state.nodes.activity
+            central.append(act[:, self._central_t])
+            mean.append(self._layer_means(act))
+        return torch.stack(central, 1), torch.stack(mean, 1), state

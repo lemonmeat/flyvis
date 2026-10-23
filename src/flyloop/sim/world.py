@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from flyloop.geometry import angles, directions, rotation_matrix  # noqa: F401
 from flyloop.stimuli.base import square
 from flyloop.stimuli.textures import sample_panorama, texture_1f
 
@@ -53,27 +54,6 @@ class Drum:
 
 # --- rotations about any axis -------------------------------------------------------
 
-def _directions(azimuth_deg, elevation_deg) -> np.ndarray:
-    """Unit vectors (..., 3): x forward, y left, z up."""
-    az, el = np.radians(azimuth_deg), np.radians(elevation_deg)
-    return np.stack([np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)], -1)
-
-
-def _angles(d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    az = np.degrees(np.arctan2(d[..., 1], d[..., 0]))
-    el = np.degrees(np.arcsin(np.clip(d[..., 2], -1.0, 1.0)))
-    return az, el
-
-
-def rotation_matrix(axis, angle_deg: float) -> np.ndarray:
-    """Right-handed rotation by angle_deg about axis (Rodrigues)."""
-    k = np.asarray(axis, float)
-    k = k / np.linalg.norm(k)
-    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
-    a = np.radians(angle_deg)
-    return np.eye(3) + np.sin(a) * K + (1 - np.cos(a)) * K @ K
-
-
 def horizontal_axis(azimuth_deg: float) -> np.ndarray:
     """Unit vector in the horizontal plane. 0 = forward (roll axis), 90 = left
     (pitch axis)."""
@@ -101,8 +81,8 @@ class SphereWorld:
         self.rotation = np.eye(3)
 
     def luminance(self, azimuth_deg: np.ndarray, elevation_deg: np.ndarray) -> np.ndarray:
-        q = _directions(azimuth_deg, elevation_deg) @ self.rotation  # = R^T d
-        return sample_panorama(self.panorama, *_angles(q))
+        q = directions(azimuth_deg, elevation_deg) @ self.rotation  # = R^T d
+        return sample_panorama(self.panorama, *angles(q))
 
     def rotate(self, axis, omega_deg_s: float, dt: float) -> None:
         self.rotation = rotation_matrix(axis, omega_deg_s * dt) @ self.rotation

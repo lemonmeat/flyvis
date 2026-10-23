@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from flyloop.geometry import angles, directions
 from flyloop.stimuli.lattice import HexLattice
 
 EYE_ORDER = ("left", "right")  # batch order of eye-stacked arrays everywhere
@@ -76,18 +77,26 @@ class Eyes:
         # (2, n_hexals, n_sub^2) viewing directions, left then right
         self.azimuth = np.stack([e.azimuth for e in self.eyes])
         self.elevation = np.stack([e.elevation for e in self.eyes])
+        self._directions = directions(self.azimuth, self.elevation)  # body frame
 
-    def sample(self, world, heading_deg: float = 0.0) -> np.ndarray:
+    def sample(self, world, heading_deg: float = 0.0,
+               orientation: np.ndarray | None = None) -> np.ndarray:
         """Photoreceptor input of both eyes.
 
         Args:
             world: Object with `luminance(azimuth_deg, elevation_deg)` taking
                 world-frame directions (arrays of equal shape).
             heading_deg: Fly heading in the world (counter-clockwise positive).
+                Ignored when orientation is given.
+            orientation: Body attitude as a (3, 3) rotation matrix taking body-frame
+                vectors to the world frame (see flyloop.sim.body).
 
         Returns:
             float32 array (2, 1, n_hexals), eyes in EYE_ORDER (left, right), the
             per-frame layout `FlyvisModel.step` expects with batch = eyes.
         """
-        lum = world.luminance(self.azimuth + heading_deg, self.elevation)
+        if orientation is None:
+            lum = world.luminance(self.azimuth + heading_deg, self.elevation)
+        else:
+            lum = world.luminance(*angles(self._directions @ np.asarray(orientation).T))
         return lum.mean(-1)[:, None, :].astype(np.float32)

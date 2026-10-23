@@ -49,3 +49,96 @@ class Drum:
         """1/f^alpha texture wrapped around the drum (seamless in azimuth)."""
         w, h = int(360 * px_per_deg), int(180 * px_per_deg)
         return cls(texture_1f((h, w), alpha, contrast, density, mean_lum, seed=seed))
+
+
+# --- rotations about any axis -------------------------------------------------------
+
+def _directions(azimuth_deg, elevation_deg) -> np.ndarray:
+    """Unit vectors (..., 3): x forward, y left, z up."""
+    az, el = np.radians(azimuth_deg), np.radians(elevation_deg)
+    return np.stack([np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)], -1)
+
+
+def _angles(d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    az = np.degrees(np.arctan2(d[..., 1], d[..., 0]))
+    el = np.degrees(np.arcsin(np.clip(d[..., 2], -1.0, 1.0)))
+    return az, el
+
+
+def rotation_matrix(axis, angle_deg: float) -> np.ndarray:
+    """Right-handed rotation by angle_deg about axis (Rodrigues)."""
+    k = np.asarray(axis, float)
+    k = k / np.linalg.norm(k)
+    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    a = np.radians(angle_deg)
+    return np.eye(3) + np.sin(a) * K + (1 - np.cos(a)) * K @ K
+
+
+def horizontal_axis(azimuth_deg: float) -> np.ndarray:
+    """Unit vector in the horizontal plane. 0 = forward (roll axis), 90 = left
+    (pitch axis)."""
+    a = np.radians(azimuth_deg)
+    return np.array([np.cos(a), np.sin(a), 0.0])
+
+
+ROLL_AXIS = horizontal_axis(0.0)    # +omega: right side moves down, left side up
+PITCH_AXIS = horizontal_axis(90.0)  # +omega: front moves down, back moves up
+YAW_AXIS = np.array([0.0, 0.0, 1.0])  # +omega: counter-clockwise, as Drum.rotate
+
+
+class SphereWorld:
+    """A panorama on a sphere around the fly that can rotate about any axis.
+
+    The panorama is equirectangular over the full sphere (azimuth -180..180,
+    elevation 90 at the top row to -90). `rotation` is the world's orientation:
+    texture point q appears in direction rotation @ q. Rotations follow the
+    right-hand rule about the given axis (see ROLL_AXIS, PITCH_AXIS, YAW_AXIS);
+    rotating about YAW_AXIS matches Drum.rotate.
+    """
+
+    def __init__(self, panorama: np.ndarray):
+        self.panorama = np.asarray(panorama, dtype=np.float32)
+        self.rotation = np.eye(3)
+
+    def luminance(self, azimuth_deg: np.ndarray, elevation_deg: np.ndarray) -> np.ndarray:
+        q = _directions(azimuth_deg, elevation_deg) @ self.rotation  # = R^T d
+        return sample_panorama(self.panorama, *_angles(q))
+
+    def rotate(self, axis, omega_deg_s: float, dt: float) -> None:
+        self.rotation = rotation_matrix(axis, omega_deg_s * dt) @ self.rotation
+
+    @classmethod
+    def texture(cls, alpha: float = 2.0, contrast: float = 1.0, density: float = 1.0,
+                mean_lum: float = 0.5, seed: int = 0, px_per_deg: float = 2.0) -> "SphereWorld":
+        w, h = int(360 * px_per_deg), int(180 * px_per_deg)
+        return cls(texture_1f((h, w), alpha, contrast, density, mean_lum, seed=seed))
+
+    @classmethod
+    def checkerboard(cls, size_deg: float = 20.0, contrast: float = 1.0,
+                     mean_lum: float = 0.5, px_per_deg: float = 2.0) -> "SphereWorld":
+        w, h = int(360 * px_per_deg), int(180 * px_per_deg)
+        az = (np.arange(w) + 0.5) / px_per_deg
+        el = (np.arange(h) + 0.5) / px_per_deg
+        cells = (np.floor(az / size_deg)[None] + np.floor(el / size_deg)[:, None]) % 2
+        return cls(mean_lum * (1 + contrast * (2 * cells - 1)))
+
+
+class VerticalGrating:
+    """Horizontal square-wave stripes drifting in elevation.
+
+    Luminance = mean_lum * (1 + contrast * square(2 pi (el - offset) / period)).
+    `drift(v_deg_s, dt)` moves the stripes up (v > 0) or down (v < 0) in every
+    direction at once: a pure vertical-motion stimulus for VS cells (not a rigid
+    rotation; use SphereWorld for roll and pitch).
+    """
+
+    def __init__(self, period_deg: float = 30.0, contrast: float = 1.0, mean_lum: float = 0.5):
+        self.period_deg, self.contrast, self.mean_lum = period_deg, contrast, mean_lum
+        self.offset_deg = 0.0
+
+    def luminance(self, azimuth_deg: np.ndarray, elevation_deg: np.ndarray) -> np.ndarray:
+        phase = 2 * np.pi * (np.asarray(elevation_deg) - self.offset_deg) / self.period_deg
+        return self.mean_lum * (1 + self.contrast * square(phase))
+
+    def drift(self, v_deg_s: float, dt: float) -> None:
+        self.offset_deg += v_deg_s * dt

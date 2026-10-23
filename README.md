@@ -10,13 +10,13 @@ body -> rendered environment. See `CLAUDE.md` for the full project description.
 ```
 src/flyloop/
   stimuli/     gratings, moving edges, rotating gratings, 1/f^alpha textures
-  eyes/        scene -> hex lattice sampling (closed loop, later)
+  eyes/        two compound eyes: world -> hex lattice at the body's attitude
   vision/      pretrained flyvis wrapper returning T4/T5 time series
-  lptc/        HS/VS layer (later)
-  control/     steering controllers (later)
-  sim/         kinematic body + closed-loop driver (later)
-  connectome/  FlyWire / neuPrint loaders (later)
-  perturb/     noise, tau scaling, ablation hooks (later)
+  lptc/        HS/VS rate model with LPi inhibition (connectome or simple weights)
+  control/     HS/VS rotation decoder + PD controller
+  sim/         worlds, visual rig, kinematic body (Body interface), closed loop
+  connectome/  neuPrint optic-lobe:v1.1 loaders, column alignment
+  perturb/     T4/T5 silencing (noise, tau scaling later)
   metrics/     DSI, preferred direction, behavioral metrics
 configs/       Hydra configs, one per experiment
 scripts/       entry points
@@ -50,7 +50,14 @@ index tensors on the CPU. On the Mac flyvis runs on CPU.
 make tuning                     # open-loop T4/T5 tuning -> runs/openloop_tuning/0_0/
 make tuning ARGS="model.name=flow/0000/001 index=1"
 make bench                      # speed benchmark -> runs/benchmark_speed/0_0/
+make closedloop                 # torque/silencing/optomotor trials -> runs/closedloop/0_0/
 ```
+
+The closed loop (`flyloop.sim.ClosedLoop`) runs world -> eyes -> flyvis -> LPTC ->
+`RotationDecoder` -> `PDController` -> body each dt. Bodies implement
+`flyloop.sim.Body` (`reset`, `step(command, dt, disturbance)`, `orientation`,
+`position`); `KinematicBody` is first-order rotation about roll, pitch and yaw
+with torques in deg/s units. A flybody body would implement the same interface.
 
 Every run writes `runs/<sweep>/<index>_<seed>/` with the resolved `config.yaml`,
 `meta.json` (git commit, dirty flag, host, timings), CSV metrics and PNG plots.

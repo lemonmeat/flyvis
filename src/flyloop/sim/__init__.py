@@ -1,6 +1,7 @@
-"""Worlds, the visual rig (eyes -> flyvis -> LPTC) and, later, the kinematic body and
-closed-loop driver."""
+"""Worlds, the visual rig (eyes -> flyvis -> LPTC), the body and the closed loop."""
 
+from .body import AXES, Body, KinematicBody
+from .loop import ClosedLoop
 from .rig import RigOutput, VisualRig
 from .world import (
     PITCH_AXIS,
@@ -14,6 +15,7 @@ from .world import (
 )
 
 __all__ = [
-    "PITCH_AXIS", "ROLL_AXIS", "YAW_AXIS", "Drum", "RigOutput", "SphereWorld",
-    "VerticalGrating", "VisualRig", "horizontal_axis", "rotation_matrix",
+    "AXES", "PITCH_AXIS", "ROLL_AXIS", "YAW_AXIS", "Body", "ClosedLoop", "Drum",
+    "KinematicBody", "RigOutput", "SphereWorld", "VerticalGrating", "VisualRig",
+    "horizontal_axis", "rotation_matrix",
 ]

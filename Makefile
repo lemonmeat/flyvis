@@ -19,7 +19,7 @@ else
 endif
 PY := $(BIN)python
 
-.PHONY: env test tuning bench submit pull status logs
+.PHONY: env test tuning bench closedloop submit pull status logs
 
 env:
 ifneq ($(shell command -v uv 2>/dev/null),)
@@ -38,6 +38,9 @@ tuning:
 
 bench:
 	$(PY) scripts/benchmark_speed.py $(ARGS)
+
+closedloop:
+	$(PY) scripts/run_closedloop.py $(ARGS)
 
 # make submit SWEEP=<name> [RES=gpu] [TIME=01:00:00] [ARRAY=0-9] [ARGS="..."] [SBATCH_ARGS="..."]
 # Submits scripts/run_<name>.py (or scripts/<name>.py) as a Slurm array through

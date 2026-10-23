@@ -1,0 +1,64 @@
+# Closed-loop stabilization: constant torque about yaw (horizontal, HS), pitch and
+# roll (vertical, VS); controls; T4/T5 silencing; optomotor following; gain scan.
+# Run: python scripts/run_closedloop.py [key=value ...]
+
+sweep: closedloop
+index: 0
+seed: 0
+out_root: ${oc.env:FLYLOOP_RUNS,runs}
+
+models: [flow/0000/000, flow/0000/001]
+dt: 0.01
+
+eyes:
+  axis_azimuth_deg: 80.0
+  n_sub: 3
+
+lptc:
+  source: connectome   # connectome or simple
+  tau_lptc: 0.01
+  tau_lpi: 0.01
+  g_exc: 1.0
+  g_inh: 1.0
+
+world:                 # SphereWorld used for calibration and most trials
+  size_deg: 20.0       # checkerboard square size
+  contrast: 1.0
+texture:               # second environment (not used for calibration)
+  alpha: 2.0
+  contrast: 1.0
+  seed: 3
+
+calibration:
+  omega_deg_s: 90.0
+  t_move: 1.5
+  unmix: false         # true: invert the full 3x3 gain matrix (mixes HS and VS)
+
+body:
+  tau_s: 0.05          # damping time constant; placeholder, check literature
+  max_command_deg_s: 1000.0
+  free_axes: [roll, pitch, yaw]
+
+controller:
+  kp: 5.0              # 1/s, on visually estimated angle error
+  kd: 1.0              # on visually estimated rotation rate (kd=2 oscillates)
+  leak_tau_s: null
+
+torque_deg_s: 100.0    # constant disturbance, as the spin rate it causes alone
+t_on: 0.5              # disturbance switched on after this many s of closed loop
+t_run: 4.0
+t_settle: 3.0          # s static scene before each trial; model 001 has ~1 s tonic drift in VS
+t_score: 2.0           # last t_score seconds are scored
+
+vision_conditions: [intact, T4_only, T5_only, silenced]
+optomotor_omega_deg_s: 60.0
+gain_scan_kd: [0.5, 1.0, 1.5, 2.0]   # yaw torque, intact
+
+sweep_list: []
+
+hydra:
+  run:
+    dir: ${out_root}/${sweep}/${index}_${seed}
+  output_subdir: .hydra
+  job:
+    chdir: false
